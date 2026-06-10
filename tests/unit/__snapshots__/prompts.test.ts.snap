@@ -1,0 +1,54 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildBlockedFixPrompt > embeds both fetch outcomes and the crawler UA 1`] = `
+"AI crawlers are blocked at my CDN/WAF before they ever see the page. Help me allowlist them safely.
+
+Page: https://example.com
+Current state: a fetch with the AI-crawler user agent "GPTBot/1.0" gets HTTP 403 (1234 bytes) while a normal desktop browser user agent gets HTTP 200 (98765 bytes). The crawler user agent received HTTP 403 (1234 bytes) while a desktop browser received HTTP 200 (98765 bytes).
+
+What I need:
+1. Identify where the block happens (CDN bot-management rule, WAF managed challenge, or origin middleware) by checking which layer returns the 403.
+2. Add an allow rule for the AI crawlers I want indexed — at minimum GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot — matching on verified user agent (and published IP ranges where the vendor supports it, e.g. Cloudflare "Verified Bots").
+3. Keep protections for unverified scrapers: allowlist specific bots, don't disable bot management globally.
+4. Verify with: curl -A "GPTBot/1.0" -sI "https://example.com" — expect HTTP 200 and the real page, not a challenge.
+
+Constraints: this must be a deliberate policy change — confirm with whoever owns security that these crawlers are wanted."
+`;
+
+exports[`buildFixPrompt — every prompt embeds real scan data > canvas prompt follows the spec's example structure 1`] = `
+"My page renders this region's data as pixels (canvas or images without alt text), which makes the data invisible to AI crawlers that don't execute JavaScript. Help me fix it with progressive enhancement.
+
+Page: https://example.com/map
+Stack: WordPress (signals: wp-content asset paths)
+Region: "Data map" — selector #map-root
+Current state: content is carried by a <canvas> element · 51 words rendered · 0% found in initial HTML
+Raw response snippet for #map-root:
+(selector #map-root is absent from the raw response — that absence is the problem)
+
+What I need:
+1. On the server, render the same data as a semantic HTML <table> inside #map-root in the initial response (caption, thead, tbody) — or descriptive alt text if these are content-bearing images.
+2. Keep the existing visualization, but have the script replace the table with the interactive version once it initializes — zero visual change for users.
+3. Keep the table accessible (it doubles as the screen-reader path).
+Verify by fetching the page without JavaScript — \`curl -A "GPTBot" "https://example.com/map"\` — and confirming the table and its values are present.
+
+Constraints: don't break the current UX, keep the table accessible, and avoid a flash of unstyled content."
+`;
+
+exports[`buildFixPrompt — every prompt embeds real scan data > js_rendered_content prompt carries url, stack, selector, evidence and snippet 1`] = `
+"My page renders this region entirely client-side, which makes its content invisible to AI crawlers that don't execute JavaScript. Help me fix it with progressive enhancement.
+
+Page: https://example.com/dashboard
+Stack: Next.js (signals: Next.js runtime payload)
+Region: "Dashboard" — selector #app
+Current state: 412 words rendered · 0 found in initial HTML · container #app is empty in the raw response
+Raw response snippet for #app:
+<div id="app"></div>
+
+What I need:
+1. Render the same content as semantic HTML inside #app in the initial server response (real headings, paragraphs, lists or a <table> — whatever matches the data).
+2. Keep the existing client script, but have it hydrate or replace that server-rendered markup once it initializes — zero visual change for users.
+3. If the data comes from an API the client calls, fetch it server-side at render time instead (or in addition).
+Verify by fetching the page without JavaScript — \`curl -A "GPTBot" "https://example.com/dashboard"\` — and confirming the region's text appears in the response body.
+
+Constraints: don't break the current UX, keep the markup accessible, and avoid a flash of unstyled content."
+`;
