@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  /*
+   * Color carries meaning, nothing else does. The chrome is monochrome; the
+   * only color on screen is the three verdicts. Tailwind's default palette is
+   * disabled so a stray `text-blue-500` cannot compile.
+   */
+  --color-*: initial;
+
+  --color-bg: #f5f6f5;
+  --color-surface: #ffffff;
+  --color-ink: #191c1a;
+  --color-muted: #6e7572;
+  --color-hairline: #e4e7e5;
+
+  /* Verdict hues — fills, dots, bars, and bold large labels only. */
+  --color-visible: #2e8f5b;
+  --color-partial: #b98a0e;
+  --color-invisible: #cd4337;
+
+  /* 10%-opacity tints precomputed over white — deterministic contrast. */
+  --color-visible-tint: #eaf4ef;
+  --color-partial-tint: #f8f3e7;
+  --color-invisible-tint: #faeceb;
+
+  /* Darkened shades for normal-size text on white and on the tints.
+   * WCAG AA (≥4.5:1) is locked in by tests/unit/contrast.test.ts. */
+  --color-visible-text: #207147;
+  --color-partial-text: #8c680b;
+  --color-invisible-text: #b03a2f;
+
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex), ui-monospace, monospace;
+
+  --radius-card: 12px;
+  --radius-field: 10px;
+
+  /* The single allowed shadow level. */
+  --shadow-soft: 0 1px 2px rgb(25 28 26 / 0.04), 0 6px 24px rgb(25 28 26 / 0.05);
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+}
+
+::selection {
+  background-color: var(--color-ink);
+  color: var(--color-bg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

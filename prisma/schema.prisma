@@ -1,0 +1,26 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Scan {
+  id            String    @id @default(cuid())
+  inputUrl      String
+  normalizedUrl String
+  // queued | fetching | rendering | diffing | classifying | done | error
+  status        String
+  errorType     String?
+  errorMessage  String?
+  score         Int?
+  result        Json?
+  comparison    Json?
+  createdAt     DateTime  @default(now())
+  finishedAt    DateTime?
+
+  @@index([normalizedUrl, createdAt])
+  @@index([status])
+}
