@@ -43,14 +43,21 @@ export default async function ScanPage({ params, searchParams }: Props) {
 
   if (scan.status !== "done") {
     return (
-      <ScanProgress
-        scanId={scan.id}
-        url={scan.normalizedUrl}
-        initialStatus={scan.status}
-        initialQueuePosition={
-          scan.status === "queued" ? currentQueuePosition(scan.id) : null
-        }
-      />
+      <>
+        {/* No-JS fallback: this page is server-rendered per request, so a
+            periodic reload eventually lands on the finished results. */}
+        <noscript>
+          <meta httpEquiv="refresh" content="4" />
+        </noscript>
+        <ScanProgress
+          scanId={scan.id}
+          url={scan.normalizedUrl}
+          initialStatus={scan.status}
+          initialQueuePosition={
+            scan.status === "queued" ? currentQueuePosition(scan.id) : null
+          }
+        />
+      </>
     );
   }
 

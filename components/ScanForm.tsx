@@ -3,11 +3,18 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function ScanForm({ initialUrl = "" }: { initialUrl?: string }) {
+export function ScanForm({
+  initialUrl = "",
+  initialError = null,
+}: {
+  initialUrl?: string;
+  /** Server-rendered error from a no-JS form submission round-trip. */
+  initialError?: string | null;
+}) {
   const router = useRouter();
   const [url, setUrl] = useState(initialUrl);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -34,7 +41,11 @@ export function ScanForm({ initialUrl = "" }: { initialUrl?: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="w-full" noValidate>
+    // method/action are the no-JS fallback: if hydration hasn't happened
+    // (stale tab, blocked script), the browser POSTs form-encoded to
+    // /api/scan, which answers with a redirect to the scan page. With JS,
+    // onSubmit preventDefaults and takes the JSON path as before.
+    <form method="post" action="/api/scan" onSubmit={submit} className="w-full" noValidate>
       <div className="flex w-full gap-2 rounded-card border border-hairline bg-surface p-2 shadow-soft">
         <label className="min-w-0 flex-1">
           <span className="sr-only">Page URL to scan</span>

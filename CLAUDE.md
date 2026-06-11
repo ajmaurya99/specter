@@ -55,6 +55,10 @@ If `npm run build` typechecking complains about deleted routes, `rm -rf .next`
 - Screenshots: JPEG files in `.specter-screenshots/` (gitignored), served by
   `/api/scan/[id]/screenshot`. The result JSON stores only {width, height},
   parsed from the actual JPEG bytes.
+- `POST /api/scan` accepts BOTH JSON (hydrated ScanForm) and form-encoded
+  posts (no-JS fallback → 303 redirects; the scanning permalink carries a
+  `<noscript>` meta-refresh). The whole scan flow must keep working with JS
+  disabled — there's an e2e for it.
 
 ## Hard-won gotchas (do not re-learn these)
 

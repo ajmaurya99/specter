@@ -9,9 +9,9 @@ export const dynamic = "force-dynamic";
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ url?: string }>;
+  searchParams: Promise<{ url?: string; error?: string }>;
 }) {
-  const { url } = await searchParams;
+  const { url, error } = await searchParams;
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -19,7 +19,7 @@ export default async function Home({
         <h1 className="text-center text-4xl font-extrabold tracking-tight sm:text-5xl">
           See your page the way AI does.
         </h1>
-        <ScanForm initialUrl={url ?? ""} />
+        <ScanForm initialUrl={url ?? ""} initialError={error ?? null} />
         <VerdictLegend />
         <Suspense>
           <RecentScans />

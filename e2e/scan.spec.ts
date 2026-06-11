@@ -133,6 +133,32 @@ test("typed error states render dedicated screens with the URL preserved", async
   );
 });
 
+test("no-JS fallback: form posts, redirects, and auto-refreshes to results", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  await setMode("before");
+  // Simulates a tab whose scripts never loaded (the bug this guards against:
+  // native form submission used to GET /?url=... and go nowhere).
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+
+  await page.goto("/");
+  await page.getByLabel("Page URL to scan").fill(`${fixture.baseUrl}/page`);
+  await page.getByRole("button", { name: "Scan page" }).click();
+  await page.waitForURL(/\/scan\//, { timeout: 15_000 });
+
+  // The <noscript> meta-refresh reloads until the server renders results.
+  await expect
+    .poll(
+      async () => page.getByText("VISIBILITY SCORE", { exact: false }).count(),
+      { timeout: 90_000 },
+    )
+    .toBeGreaterThan(0);
+
+  await context.close();
+});
+
 test("crawler-blocked page leads with the blocked panel and CDN/WAF prompt", async ({
   page,
 }) => {
