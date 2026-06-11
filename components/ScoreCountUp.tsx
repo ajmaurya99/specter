@@ -24,7 +24,8 @@ export function ScoreCountUp({ score }: { score: number }) {
   }, [score]);
 
   return (
-    <p className="font-mono text-6xl font-bold tabular-nums leading-none" aria-label={`Visibility score ${score} out of 100`}>
+    <p className="font-mono text-6xl font-bold tabular-nums leading-none">
+      <span className="sr-only">Visibility score {score} out of 100</span>
       <span aria-hidden>{shown}</span>
       <span aria-hidden className="text-2xl font-medium text-muted">
         /100

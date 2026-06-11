@@ -11,17 +11,19 @@
   --color-bg: #f5f6f5;
   --color-surface: #ffffff;
   --color-ink: #191c1a;
-  --color-muted: #6e7572;
+  /* spec's #6E7572 is 4.35:1 on the page bg — darkened to pass AA */
+  --color-muted: #69706d;
   --color-hairline: #e4e7e5;
 
-  /* Verdict hues — fills, dots, bars, and bold large labels only. */
+  /* Verdict hues — fills, dots, bars, and bold large labels only.
+   * spec's amber #B98A0E is 2.9:1 on the page bg — darkened to pass 3:1. */
   --color-visible: #2e8f5b;
-  --color-partial: #b98a0e;
+  --color-partial: #a87e0d;
   --color-invisible: #cd4337;
 
   /* 10%-opacity tints precomputed over white — deterministic contrast. */
   --color-visible-tint: #eaf4ef;
-  --color-partial-tint: #f8f3e7;
+  --color-partial-tint: #f6f2e7;
   --color-invisible-tint: #faeceb;
 
   /* Darkened shades for normal-size text on white and on the tints.

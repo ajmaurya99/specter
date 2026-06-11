@@ -14,11 +14,13 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
+    // Fresh throwaway DB, committed migrations applied non-interactively,
+    // then a true production build of the app under test.
     command:
-      "npm run build && npm run db:migrate -- --name e2e --skip-generate && npm run start",
+      "node -e \"require('fs').rmSync('e2e.db',{force:true})\" && npx prisma migrate deploy && npm run build && npm run start",
     url: "http://localhost:3000",
     reuseExistingServer: false,
-    timeout: 180_000,
+    timeout: 300_000,
     env: {
       DATABASE_URL: "file:./e2e.db",
       ALLOW_LOCAL_TARGETS: "true",
