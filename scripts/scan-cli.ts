@@ -19,6 +19,7 @@ async function main() {
     const result = await runScan(
       {
         url,
+        originalUrl: arg,
         crawlerUserAgent: process.env.CRAWLER_USER_AGENT ?? "GPTBot/1.0",
         timeoutMs: Number(process.env.SCAN_TIMEOUT_MS ?? 25000),
         allowLocal: process.env.ALLOW_LOCAL_TARGETS === "true",

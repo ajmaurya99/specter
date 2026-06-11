@@ -23,6 +23,15 @@ describe("normalizeUrl", () => {
     expect(normalizeUrl("http://localhost:3000/a")).toBe("http://localhost:3000/a");
   });
 
+  it("treats scheme-less host:port as a host, not a scheme", () => {
+    expect(normalizeUrl("localhost:3000/a")).toBe("https://localhost:3000/a");
+    expect(normalizeUrl("example.com:8080")).toBe("https://example.com:8080/");
+  });
+
+  it("preserves explicit non-http schemes for the engine to reject", () => {
+    expect(normalizeUrl("ftp://example.com/file")).toBe("ftp://example.com/file");
+  });
+
   it("strips trailing slashes except at the root", () => {
     expect(normalizeUrl("https://example.com/docs/")).toBe("https://example.com/docs");
     expect(normalizeUrl("https://example.com/")).toBe("https://example.com/");

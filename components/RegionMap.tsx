@@ -75,7 +75,13 @@ export function RegionMap({
 }) {
   const mapHeight = Math.min(Math.max(pageHeight, 800), MAX_MAP_PAGE_HEIGHT);
   const visible = regions
-    .filter((r) => r.boundingBox.width > 0 && r.boundingBox.height > 0)
+    .filter(
+      (r) =>
+        r.boundingBox.width > 0 &&
+        r.boundingBox.height > 0 &&
+        // Regions entirely below the capped canvas can't be drawn.
+        r.boundingBox.y < mapHeight - 24,
+    )
     .sort((a, b) => a.boundingBox.y - b.boundingBox.y || a.boundingBox.x - b.boundingBox.x);
 
   const pct = (v: number, total: number) => `${(v / total) * 100}%`;
@@ -108,6 +114,7 @@ export function RegionMap({
               <button
                 key={region.selector}
                 type="button"
+                data-region-button={region.selector}
                 onClick={(e) => onSelect(region.selector, e.currentTarget)}
                 aria-label={`${region.name} — ${VERDICT_LONG[region.status]}${glyph ? `, ${change}` : ""}`}
                 aria-pressed={isSelected}
@@ -116,9 +123,9 @@ export function RegionMap({
                 }`}
                 style={{
                   left: pct(x, 1280),
-                  top: pct(Math.min(y, mapHeight - 24), mapHeight),
+                  top: pct(y, mapHeight),
                   width: pct(Math.min(width, 1280 - x), 1280),
-                  height: pct(Math.min(height, mapHeight - y), mapHeight),
+                  height: pct(Math.max(24, Math.min(height, mapHeight - y)), mapHeight),
                 }}
               >
                 <span className="flex w-full items-baseline gap-1.5 overflow-hidden whitespace-nowrap">

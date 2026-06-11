@@ -29,15 +29,33 @@ export function ResultsExplorer({
   const [tab, setTab] = useState<Tab>("map");
   const [selected, setSelected] = useState<string | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const originRef = useRef<"list" | "map">("map");
 
   const select = (selector: string, trigger: HTMLElement) => {
     triggerRef.current = trigger;
+    originRef.current = trigger.closest("aside") ? "list" : "map";
     setSelected(selector);
   };
   const back = () => {
+    const selector = selected;
     setSelected(null);
     // Spec choreography: focus returns to the originating region on back.
-    requestAnimationFrame(() => triggerRef.current?.focus());
+    // List buttons unmount while the detail is open, so the saved element
+    // may be detached — find its re-rendered equivalent by selector.
+    requestAnimationFrame(() => {
+      const el = triggerRef.current;
+      if (el?.isConnected) {
+        el.focus();
+        return;
+      }
+      if (!selector) return;
+      const scope = originRef.current === "list" ? "aside " : "";
+      document
+        .querySelector<HTMLElement>(
+          `${scope}[data-region-button="${CSS.escape(selector)}"]`,
+        )
+        ?.focus();
+    });
   };
 
   const changeBySelector = new Map<string, RegionChangeKind>(
@@ -52,7 +70,12 @@ export function ResultsExplorer({
           <h1 className="text-2xl font-extrabold tracking-tight">
             {hostOf(result.url)}
           </h1>
-          <p className="truncate font-mono text-xs text-muted" title={result.url}>
+          <p
+            className="truncate font-mono text-xs text-muted"
+            title={result.url}
+            // "N min ago" can differ between server render and hydration.
+            suppressHydrationWarning
+          >
             {result.url} · scanned {timeAgo(result.scannedAt)}
           </p>
         </div>

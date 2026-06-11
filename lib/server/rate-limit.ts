@@ -25,6 +25,11 @@ export function checkRateLimit(ip: string, now = Date.now()): RateDecision {
   return { allowed: true, retryAfterSeconds: 0 };
 }
 
+/**
+ * X-Forwarded-For is client-spoofable when Specter is exposed directly.
+ * Acceptable for the intended local/trusted-proxy deployments (README warns
+ * against exposing Specter publicly without revisiting this).
+ */
 export function clientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();

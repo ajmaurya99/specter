@@ -3,6 +3,7 @@ import { createEnhancer, noopEnhancer, type PromptEnhancer } from "../enhancer";
 import { classify } from "./classifier";
 import { createDiffer } from "./differ";
 import {
+  assertPublicHost,
   fetchCrawlerView,
   type CrawlerView,
   type LookupFn,
@@ -31,7 +32,13 @@ export type * from "./types";
  */
 
 export interface ScanInput {
+  /** Normalized URL the scan runs against. */
   url: string;
+  /**
+   * The URL exactly as the user typed it. Normalization strips the fragment,
+   * so the "requires JS routing" page check must look at the original.
+   */
+  originalUrl?: string;
   crawlerUserAgent: string;
   timeoutMs: number;
   allowLocal: boolean;
@@ -73,7 +80,14 @@ export async function runScan(input: ScanInput, deps: ScanDeps): Promise<ScanRes
   const renderStarted = Date.now();
   const render = await renderPage(
     { url: analysisUrl, timeoutMs: input.timeoutMs },
-    { browser: deps.browser },
+    {
+      browser: deps.browser,
+      // The page's own JS runs in the renderer and can issue requests; keep
+      // it away from private hosts unless local targets are allowed.
+      isHostAllowed: input.allowLocal
+        ? undefined
+        : makeHostGate(deps.lookup),
+    },
   );
   const renderDurationMs = Date.now() - renderStarted;
 
@@ -101,7 +115,11 @@ export async function runScan(input: ScanInput, deps: ScanDeps): Promise<ScanRes
     probeLinks: defaultProber(fetchImpl, analysisUrl),
   });
 
-  const { score } = computeScore(regions);
+  // hidden_but_present entries are informational — they carry no weight and
+  // must not move the score.
+  const { score } = computeScore(
+    regions.filter((r) => r.issueType !== "hidden_but_present"),
+  );
   const finalScore = view.blocked ? Math.min(score, BLOCKED_SCORE_CAP) : score;
 
   const stack = fingerprint(view.rawHtml);
@@ -129,7 +147,7 @@ export async function runScan(input: ScanInput, deps: ScanDeps): Promise<ScanRes
     blocked: view.blocked,
     stack,
     regions,
-    pageChecks: buildPageChecks(view, input.url, analysisUrl),
+    pageChecks: buildPageChecks(view, input.originalUrl ?? input.url, analysisUrl),
     rawText: view.rawText,
     telemetry: {
       crawlerStatus: view.crawler.status,
@@ -148,6 +166,8 @@ export async function runScan(input: ScanInput, deps: ScanDeps): Promise<ScanRes
 
 function buildPageChecks(
   view: CrawlerView,
+  // The PRE-normalization URL: normalizeUrl strips fragments, so #/ routes
+  // are only detectable on what the user actually typed.
   inputUrl: string,
   analysisUrl: string,
 ): PageChecks {
@@ -182,6 +202,25 @@ function safePathname(url: string): string {
   } catch {
     return "/";
   }
+}
+
+/**
+ * Per-host allow/deny for renderer subresource requests, with a cache so a
+ * page with many same-host requests resolves DNS once.
+ */
+function makeHostGate(lookup?: LookupFn): (hostname: string) => Promise<boolean> {
+  const cache = new Map<string, Promise<boolean>>();
+  return (hostname: string) => {
+    let cached = cache.get(hostname);
+    if (!cached) {
+      cached = assertPublicHost(hostname, lookup).then(
+        () => true,
+        () => false,
+      );
+      cache.set(hostname, cached);
+    }
+    return cached;
+  };
 }
 
 /**

@@ -51,6 +51,13 @@ describe("SSRF guard — IP range checks", () => {
     ["::ffff:10.0.0.1", true],
     ["::ffff:8.8.8.8", false],
     ["2606:2800:220:1::1", false],
+    // bypass attempts: hex-form and full-form IPv4-mapped, compat form, NAT64
+    ["::ffff:a00:1", true], // 10.0.0.1 in hex groups
+    ["::ffff:7f00:1", true], // 127.0.0.1 in hex groups
+    ["::ffff:808:808", false], // 8.8.8.8 in hex groups — public
+    ["0:0:0:0:0:ffff:192.168.0.1", true],
+    ["::c0a8:1", true], // deprecated IPv4-compatible 192.168.0.1
+    ["64:ff9b::10.0.0.1", true], // NAT64 prefix
   ])("isPrivateIPv6(%s) → %s", (ip, expected) => {
     expect(isPrivateIPv6(ip)).toBe(expected);
   });
@@ -223,7 +230,38 @@ describe("detectBotBlock — fixtures per branch", () => {
     const thin = `<html><body><p>Please enable JavaScript to view this site properly today.</p></body></html>`;
     const verdict = detectBotBlock(outcome(thin, 200), outcome(RICH_PAGE, 200), CRAWLER_UA);
     expect(verdict?.reason).toBe("divergence");
-    expect(verdict?.evidence).toMatch(/\d+% text overlap/);
+    expect(verdict?.evidence).toMatch(/\d+% of the browser-visible text/);
+  });
+
+  it("thin SUBSET page served to crawlers → divergence (direction matters)", () => {
+    // The crawler gets a real but tiny excerpt of the page: high overlap in
+    // the crawler→control direction, low containment of the control text.
+    const variedControl = `<html><body><main>${Array.from(
+      { length: 20 },
+      (_, i) =>
+        `<p>Distinct paragraph number ${i} covering topic ${i} with unique wording about subject area ${i} and findings ${i}.</p>`,
+    ).join("")}</main></body></html>`;
+    const excerpt = `<html><body><p>Distinct paragraph number 0 covering topic 0 with unique wording about subject area 0 and findings 0.</p></body></html>`;
+    const verdict = detectBotBlock(
+      outcome(excerpt, 200),
+      outcome(variedControl, 200),
+      CRAWLER_UA,
+    );
+    expect(verdict?.reason).toBe("divergence");
+  });
+
+  it("equal-length cloaked content → divergence despite similar word counts", () => {
+    const cloaked = `<html><body>${"<p>Totally unrelated marketing copy stuffed with keywords for machines only here.</p>".repeat(20)}</body></html>`;
+    const verdict = detectBotBlock(outcome(cloaked, 200), outcome(RICH_PAGE, 200), CRAWLER_UA);
+    expect(verdict?.reason).toBe("divergence");
+  });
+
+  it("never flags divergence on tiny control pages", () => {
+    const tinyControl = `<html><body><p>Five words of content here.</p></body></html>`;
+    const different = `<html><body><p>Different five words entirely now.</p></body></html>`;
+    expect(
+      detectBotBlock(outcome(different, 200), outcome(tinyControl, 200), CRAWLER_UA),
+    ).toBeNull();
   });
 
   it("never claims blocked when the control fetch failed", () => {

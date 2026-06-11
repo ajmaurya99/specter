@@ -20,6 +20,22 @@ const CAVEAT =
   "without executing JavaScript. “Invisible” means invisible to most crawlers, " +
   "most of the time — not all; some AI products read from rendering search indexes.";
 
+/**
+ * Region names and evidence originate from the scanned page (headings,
+ * aria-labels). Keep them on one line and free of markdown structure so a
+ * hostile page can't inject headings/links into the fix plan.
+ */
+function mdInline(s: string): string {
+  return s.replace(/\s+/g, " ").replace(/[`#>[\]|]/g, "").trim().slice(0, 200);
+}
+
+/** Fence with more backticks than any run inside the content. */
+function fenced(content: string): string[] {
+  const longestRun = content.match(/`+/g)?.reduce((m, r) => Math.max(m, r.length), 0) ?? 0;
+  const fence = "`".repeat(Math.max(3, longestRun + 1));
+  return [fence, content, fence];
+}
+
 function checksLines(result: ScanResult): string[] {
   const c = result.pageChecks;
   const lines = [
@@ -55,11 +71,9 @@ export function buildFixPlanMarkdown(result: ScanResult): string {
     parts.push(
       "## Fix this first: AI crawlers are blocked at the door",
       "",
-      result.blocked.evidence,
+      mdInline(result.blocked.evidence),
       "",
-      "```",
-      result.blocked.fixPrompt,
-      "```",
+      ...fenced(result.blocked.fixPrompt),
       "",
     );
   }
@@ -72,14 +86,12 @@ export function buildFixPlanMarkdown(result: ScanResult): string {
     parts.push(`## Region fixes (${regions.length}, ordered by score impact)`, "");
     regions.forEach((region, i) => {
       parts.push(
-        `### ${i + 1}. ${region.name} — ${region.issueType.replace(/_/g, " ")} (${region.status === "bad" ? "invisible" : "partial"})`,
+        `### ${i + 1}. ${mdInline(region.name)} — ${region.issueType.replace(/_/g, " ")} (${region.status === "bad" ? "invisible" : "partial"})`,
         "",
-        `Selector: \`${region.selector}\``,
-        `Evidence: ${region.evidence}`,
+        `Selector: \`${region.selector.replace(/`/g, "")}\``,
+        `Evidence: ${mdInline(region.evidence)}`,
         "",
-        "```",
-        region.fixPrompt ?? "(no prompt generated)",
-        "```",
+        ...fenced(region.fixPrompt ?? "(no prompt generated)"),
         "",
       );
     });

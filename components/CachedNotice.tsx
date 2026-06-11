@@ -7,9 +7,11 @@ import { useState } from "react";
 export function CachedNotice({ url, ageMinutes }: { url: string; ageMinutes: number }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function rescan() {
     setBusy(true);
+    setError(null);
     try {
       const res = await fetch("/api/scan", {
         method: "POST",
@@ -21,15 +23,19 @@ export function CachedNotice({ url, ageMinutes }: { url: string; ageMinutes: num
         router.push(`/scan/${data.scanId}`);
         return;
       }
+      setError(data.message ?? "Rescan failed — try again.");
     } catch {
-      // fall through to re-enable the button
+      setError("Could not reach the scanner — try again.");
     }
     setBusy(false);
   }
 
   return (
-    <p className="flex items-baseline gap-3 rounded-card border border-hairline bg-surface px-4 py-2.5 text-sm shadow-soft">
-      <span className="text-muted">
+    <div
+      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-card border border-hairline bg-surface px-4 py-2.5 text-sm shadow-soft"
+      aria-live="polite"
+    >
+      <span className="text-muted" suppressHydrationWarning>
         Scanned {ageMinutes < 1 ? "moments" : `${ageMinutes} min`} ago — showing the
         cached result.
       </span>
@@ -41,6 +47,7 @@ export function CachedNotice({ url, ageMinutes }: { url: string; ageMinutes: num
       >
         {busy ? "Starting…" : "Rescan now"}
       </button>
-    </p>
+      {error && <span className="w-full text-xs text-muted">{error}</span>}
+    </div>
   );
 }

@@ -193,6 +193,46 @@ describe("classifier — one fixture per issueType", () => {
     expect(regions[0].evidence).toContain("hidden via CSS");
   });
 
+  it("hidden_but_present carries zero weight — it must not move the score", async () => {
+    const rawHtml = fixtureHtml("hidden_but_present");
+    const rawText = extractRawText(rawHtml);
+    const differ = createDiffer(rawText, "");
+    const rendered = makeRegion({
+      selector: "#visible",
+      text: "completely client rendered words that the raw response never contained anywhere at all today",
+    });
+    const { regions } = await classify({
+      regions: [{ ...rendered, ...differ.diff(rendered.text) }],
+      hiddenBlocks: [
+        {
+          selector: "#pricing-fallback",
+          text: `The starter plan costs twelve dollars per month and includes three
+            projects, unlimited scans and community support. The team plan costs
+            forty nine dollars per month and adds shared dashboards, ten seats and
+            priority email support with a one business day response target.`,
+        },
+      ],
+      rawText,
+      rawHtml,
+      baseUrl: "https://example.com/pricing",
+    });
+    const hidden = regions.find((r) => r.issueType === "hidden_but_present");
+    const visible = regions.find((r) => r.selector === "#visible");
+    expect(hidden?.weight).toBe(0);
+    expect(visible?.weight).toBe(1);
+  });
+
+  it("empty shell regions (no words, media, or links) are dropped, not scored bad", async () => {
+    const { regions } = await classifyFixture("fully_visible", [
+      makeRegion({ selector: "#spacer", text: "" }),
+      makeRegion({
+        selector: "#report",
+        text: "Coastal erosion accelerated in 2025 Field measurements along the northern shoreline recorded an average retreat",
+      }),
+    ]);
+    expect(regions.map((r) => r.selector)).toEqual(["#report"]);
+  });
+
   it("hidden blocks NOT present in raw HTML are ignored", async () => {
     const { regions } = await classifyFixture("fully_visible", [], {
       hiddenBlocks: [

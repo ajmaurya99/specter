@@ -79,10 +79,26 @@ function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
 }
 
-const CLIENT_ROUTE_MIN_LINKS = 3;
+/** Noise floor: one lone hash link isn't "navigation" (README: deviation). */
+const CLIENT_ROUTE_MIN_LINKS = 2;
 
 export interface ClassifiedPage {
   regions: RegionResult[];
+}
+
+/**
+ * A region with no words, no content-bearing media, and no links is an empty
+ * shell (spacer, decorative wrapper) — there is no content to be invisible.
+ * Scoring it as "bad" would tank pages for rendering artifacts.
+ */
+function isEmptyShell(region: RegionCapture & DiffResult): boolean {
+  return (
+    region.wordCount === 0 &&
+    !region.flags.canvasDominant &&
+    !region.flags.iframeDominant &&
+    !(region.flags.imageDominant && region.flags.imgWithoutAltCount > 0) &&
+    region.links.length === 0
+  );
 }
 
 export async function classify(input: ClassifierInput): Promise<ClassifiedPage> {
@@ -90,6 +106,7 @@ export async function classify(input: ClassifierInput): Promise<ClassifiedPage> 
   const results: RegionResult[] = [];
 
   for (const region of input.regions) {
+    if (isEmptyShell(region)) continue;
     const rawState = inspectRawContainer($raw, region.selector);
     const { issueType, evidence } = await classifyRegion(region, rawState, input);
     results.push({
@@ -110,11 +127,15 @@ export async function classify(input: ClassifierInput): Promise<ClassifiedPage> 
 
   appendHiddenBlocks(results, input);
 
+  // Weights (and therefore the score) cover RENDERED regions only —
+  // hidden_but_present entries are informational and must not inflate the
+  // score with content users never see.
+  const rendered = results.filter((r) => r.issueType !== "hidden_but_present");
   const weights = computeWeights(
-    results.map((r) => ({ wordCount: r.wordCount, boundingBox: r.boundingBox })),
+    rendered.map((r) => ({ wordCount: r.wordCount, boundingBox: r.boundingBox })),
   );
-  weights.forEach((w, i) => {
-    results[i].weight = w;
+  rendered.forEach((region, i) => {
+    region.weight = weights[i];
   });
 
   // Issues first: heaviest broken regions lead the report.

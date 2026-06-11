@@ -28,7 +28,7 @@ export async function runStoredScan(scanId: string): Promise<void> {
   };
 
   try {
-    const result = await runWithRetry(scan.normalizedUrl, setStatus);
+    const result = await runWithRetry(scan.normalizedUrl, scan.inputUrl, setStatus);
 
     const truncated: ScanResult = {
       ...result,
@@ -82,10 +82,12 @@ export async function runStoredScan(scanId: string): Promise<void> {
 
 async function runWithRetry(
   url: string,
+  originalUrl: string,
   setStatus: (s: ScanStatus, telemetry?: Record<string, unknown>) => Promise<void>,
 ): Promise<ScanResult> {
   const input = {
     url,
+    originalUrl,
     crawlerUserAgent: env.CRAWLER_USER_AGENT,
     timeoutMs: env.SCAN_TIMEOUT_MS,
     allowLocal: env.ALLOW_LOCAL_TARGETS,
@@ -93,19 +95,39 @@ async function runWithRetry(
   const deps = {
     enhancer: createEnhancer(env.ANTHROPIC_API_KEY),
     onProgress: (phase: ScanStatus, telemetry: Record<string, unknown>) => {
-      void setStatus(phase, telemetry);
+      // Fire-and-forget by design, but a failed write must not become an
+      // unhandled rejection.
+      setStatus(phase, telemetry).catch((err) =>
+        console.error("[specter] progress write failed:", err),
+      );
     },
   };
 
   try {
-    return await runScan(input, { ...deps, browser: await getBrowser() });
+    const browser = await getBrowser();
+    return await runScan(input, { ...deps, browser });
   } catch (err) {
+    if (!(await browserDied(err))) throw err;
     // A crashed/disconnected browser is recoverable: relaunch and retry once.
-    const browserDied =
-      err instanceof Error &&
-      /browser.*(closed|disconnected)|target page, context or browser/i.test(err.message);
-    if (!browserDied) throw err;
     return await runScan(input, { ...deps, browser: await getBrowser() });
+  }
+}
+
+/**
+ * Crash detection must look at the EngineError's detail too — the renderer
+ * wraps Playwright messages, so the top-level message alone never matches.
+ */
+async function browserDied(err: unknown): Promise<boolean> {
+  const CRASH = /browser.*(closed|disconnected)|target page, context or browser/i;
+  const texts: string[] = [];
+  if (err instanceof Error) texts.push(err.message);
+  if (isEngineError(err)) texts.push(String(err.detail?.message ?? ""));
+  if (texts.some((t) => CRASH.test(t))) return true;
+  try {
+    const browser = await getBrowser();
+    return !browser.isConnected();
+  } catch {
+    return true;
   }
 }
 

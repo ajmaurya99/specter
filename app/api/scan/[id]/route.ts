@@ -4,6 +4,17 @@ import { currentQueuePosition } from "@/lib/server/queue";
 
 export const dynamic = "force-dynamic";
 
+/** Coarse numeric progress per status (spec'd field; SSE carries the detail). */
+const PROGRESS: Record<string, number> = {
+  queued: 0,
+  fetching: 0.2,
+  rendering: 0.45,
+  diffing: 0.7,
+  classifying: 0.9,
+  done: 1,
+  error: 1,
+};
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -19,6 +30,7 @@ export async function GET(
     url: scan.inputUrl,
     normalizedUrl: scan.normalizedUrl,
     status: scan.status,
+    progress: PROGRESS[scan.status] ?? 0,
     queuePosition: scan.status === "queued" ? currentQueuePosition(scan.id) : undefined,
     errorType: scan.errorType ?? undefined,
     message: scan.errorMessage ?? undefined,

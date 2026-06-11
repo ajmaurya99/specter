@@ -156,6 +156,13 @@ is paired with a text label.
   bare `script-src 'self'` impossible, and Next injects inline styles.
 - `postinstall: prisma generate` and `typecheck` scripts were added (Prisma 7
   generates its client into the gitignored `lib/generated/`).
+- Bot-block "divergent content" fires when less than 40 % of the
+  browser-visible text reaches the crawler AND the browser page has ≥ 50 words
+  (the floor avoids noise on near-empty pages; the spec's wording has no floor).
+- `client_side_routes` needs at least 2 links in the region (a single hash
+  link isn't "navigation"); the spec's >50 % rule has no minimum.
+- When a page never reaches network-idle within the render budget, Specter
+  analyzes the partial render instead of failing the scan with a timeout.
 
 ## Known limitations
 

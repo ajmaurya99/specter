@@ -8,7 +8,9 @@ const TRACKING_PARAM = /^(utm_\w+|gclid|fbclid|msclkid|mc_cid|mc_eid)$/i;
 
 export function normalizeUrl(input: string): string {
   const trimmed = input.trim();
-  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)
+  // Only an explicit scheme followed by "//" counts — otherwise inputs like
+  // "localhost:3000/x" would parse "localhost" as the scheme.
+  const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)
     ? trimmed
     : `https://${trimmed}`;
 

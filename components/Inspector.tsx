@@ -112,6 +112,7 @@ function RegionListView({
             <li key={region.selector}>
               <button
                 type="button"
+                data-region-button={region.selector}
                 onClick={(e) => onSelect(region.selector, e.currentTarget)}
                 className="flex w-full items-baseline gap-2 px-1 py-2.5 text-left hover:bg-bg"
               >

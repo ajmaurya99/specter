@@ -20,6 +20,11 @@ export interface RendererInput {
 
 export interface RendererDeps {
   browser: Browser;
+  /**
+   * When set, subresource requests to hosts this rejects are aborted —
+   * the scanned page's own JS must not reach private hosts (SSRF).
+   */
+  isHostAllowed?: (hostname: string) => Promise<boolean>;
 }
 
 interface RawRegion {
@@ -49,10 +54,18 @@ export async function renderPage(
   try {
     // Identical blocking on every render keeps region geometry comparable
     // between scans of the same URL. Stylesheets stay — layout matters.
-    await context.route("**/*", (route) => {
+    await context.route("**/*", async (route) => {
       const type = route.request().resourceType();
       if (type === "image" || type === "font" || type === "media") {
         return route.abort();
+      }
+      if (deps.isHostAllowed) {
+        try {
+          const host = new URL(route.request().url()).hostname;
+          if (!(await deps.isHostAllowed(host))) return route.abort();
+        } catch {
+          return route.abort();
+        }
       }
       return route.continue();
     });
@@ -62,6 +75,7 @@ export async function renderPage(
       requestCount += 1;
     });
 
+    const renderDeadline = Date.now() + timeoutMs;
     try {
       await page.goto(input.url, {
         waitUntil: "domcontentloaded",
@@ -71,10 +85,12 @@ export async function renderPage(
       throw mapRenderError(err, input.url, "goto");
     }
 
-    // networkidle is the pragmatic choice for arbitrary pages; its built-in
-    // timeout is the hard cap and timing out is fine — analyze what rendered.
+    // networkidle is the pragmatic choice for arbitrary pages. The remaining
+    // budget (not a fresh one) is the hard cap, and timing out here is fine —
+    // analyze what rendered (README: known limitation).
+    const idleBudget = Math.max(1_000, renderDeadline - Date.now());
     await page
-      .waitForLoadState("networkidle", { timeout: timeoutMs })
+      .waitForLoadState("networkidle", { timeout: idleBudget })
       .catch(() => {});
 
     let seg: SegmentationResult;
@@ -174,7 +190,7 @@ const SEGMENT_PAGE_SCRIPT = `(() => {
     const parts = [];
     let cur = el;
     let depth = 0;
-    while (cur && cur !== document.body && depth < 6) {
+    while (cur && cur !== document.body && depth < 8) {
       if (idUsable(cur)) { parts.unshift("#" + cur.id); return parts.join(" > "); }
       const tag = cur.tagName.toLowerCase();
       const parent = cur.parentElement;
@@ -183,7 +199,12 @@ const SEGMENT_PAGE_SCRIPT = `(() => {
       cur = parent;
       depth++;
     }
-    parts.unshift("body");
+    if (cur === document.body) {
+      parts.unshift("body");
+      return parts.join(" > ");
+    }
+    // Depth budget ran out before reaching body: a child-combinator chain
+    // anchored at body would match NOTHING. Use a descendant-rooted chain.
     return parts.join(" > ");
   }
 
@@ -236,7 +257,8 @@ const SEGMENT_PAGE_SCRIPT = `(() => {
   let contentEls = walkChildren(main).filter((el) => !els.some((e) => e.contains(el) || el.contains(e)));
 
   // Div-soup pages wrap everything in one tall shell — descend into the
-  // largest captured block until at least 3 regions emerge.
+  // largest captured block until at least 3 regions emerge. Children that
+  // overlap an already-captured landmark are skipped (no duplicates).
   let guard = 0;
   while (contentEls.length < 3 && guard < MAX_DESCENTS) {
     let largest = null;
@@ -248,13 +270,15 @@ const SEGMENT_PAGE_SCRIPT = `(() => {
     }
     const expandFrom = largest || (contentEls.length === 0 ? main : null);
     if (!expandFrom) break;
-    const sub = walkChildren(expandFrom);
+    const sub = walkChildren(expandFrom).filter(
+      (el) => !els.some((e) => e === el || e.contains(el) || el.contains(e)),
+    );
     if (sub.length === 0) break;
     contentEls = contentEls.filter((el) => el !== expandFrom).concat(sub);
     guard++;
   }
 
-  els = els.concat(contentEls);
+  els = Array.from(new Set(els.concat(contentEls)));
 
   // Drop nested duplicates (keep the outermost), then cap by area.
   els = els.filter((el, i) => !els.some((other, j) => j !== i && other !== el && other.contains(el)));
@@ -286,8 +310,13 @@ const SEGMENT_PAGE_SCRIPT = `(() => {
     let imgCount = 0;
     let imgWithoutAlt = 0;
     for (const img of Array.from(el.querySelectorAll("img"))) {
+      // Image requests are blocked during render, which can collapse layout
+      // rects to zero — fall back to the intended width/height attributes so
+      // imageDominant still reflects the real page.
       const r = img.getBoundingClientRect();
-      imgArea += r.width * r.height;
+      const w = r.width || img.width || Number(img.getAttribute("width")) || 0;
+      const h = r.height || img.height || Number(img.getAttribute("height")) || 0;
+      imgArea += w * h;
       imgCount++;
       const alt = img.getAttribute("alt");
       if (!alt || !alt.trim()) imgWithoutAlt++;

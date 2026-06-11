@@ -89,18 +89,47 @@ export function isPrivateIPv4(ip: string): boolean {
   });
 }
 
+/** Expand an IPv6 string to its eight 16-bit groups (null if malformed). */
+function expandIPv6(ip: string): number[] | null {
+  let body = ip;
+  // Trailing dotted-quad (::ffff:1.2.3.4) → two hex groups.
+  const dotted = body.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) {
+    const v4 = ipv4ToInt(dotted[2]);
+    if (v4 === null) return null;
+    body = `${dotted[1]}${(v4 >>> 16).toString(16)}:${(v4 & 0xffff).toString(16)}`;
+  }
+  const halves = body.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const missing = 8 - head.length - tail.length;
+  if (missing < 0 || (halves.length === 1 && missing !== 0)) return null;
+  const groups = [...head, ...Array(missing).fill("0"), ...tail].map((g) =>
+    /^[0-9a-f]{1,4}$/.test(g) ? parseInt(g, 16) : NaN,
+  );
+  return groups.some(Number.isNaN) ? null : groups;
+}
+
 export function isPrivateIPv6(ip: string): boolean {
   const norm = ip.toLowerCase().replace(/^\[|\]$/g, "");
-  if (norm === "::1" || norm === "::") return true;
-  // IPv4-mapped (::ffff:1.2.3.4) — check the embedded v4.
-  const mapped = norm.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIPv4(mapped[1]);
-  const head = norm.split(":")[0];
-  if (head.length === 4) {
-    const block = parseInt(head, 16);
-    if (block >= 0xfc00 && block <= 0xfdff) return true; // fc00::/7
-    if (block >= 0xfe80 && block <= 0xfebf) return true; // fe80::/10
+  const groups = expandIPv6(norm);
+  if (!groups) return false;
+  const isZero = (from: number, to: number) =>
+    groups.slice(from, to).every((g) => g === 0);
+
+  if (isZero(0, 7) && groups[7] === 1) return true; // ::1
+  if (isZero(0, 8)) return true; // ::
+  // IPv4-mapped (::ffff:x.x.x.x in any spelling) and the deprecated
+  // IPv4-compatible (::x.x.x.x) forms — classify the embedded v4.
+  if (isZero(0, 5) && (groups[5] === 0xffff || groups[5] === 0)) {
+    return isPrivateIPv4(
+      `${groups[6] >> 8}.${groups[6] & 0xff}.${groups[7] >> 8}.${groups[7] & 0xff}`,
+    );
   }
+  if (groups[0] >= 0xfc00 && groups[0] <= 0xfdff) return true; // fc00::/7
+  if (groups[0] >= 0xfe80 && groups[0] <= 0xfebf) return true; // fe80::/10
+  if (groups[0] === 0x64 && groups[1] === 0xff9b) return true; // 64:ff9b::/96 NAT64
   return false;
 }
 
@@ -229,26 +258,55 @@ export async function guardedFetch(
       }
     }
 
-    let body: string;
+    let body: { text: string; bytes: number };
     try {
-      body = await res.text();
+      body = await readBodyCapped(res, MAX_BODY_CHARS);
     } catch (err) {
       throw mapFetchError(err, current, opts.timeoutMs);
     }
-    const bytes = Buffer.byteLength(body);
     return {
       requestedUrl: url,
       finalUrl: current,
       status: res.status,
       contentType: res.headers.get("content-type"),
-      bytes,
-      html: body.length > MAX_BODY_CHARS ? body.slice(0, MAX_BODY_CHARS) : body,
+      bytes: body.bytes,
+      html: body.text,
       redirects,
       durationMs: Date.now() - started,
     };
   }
   // Unreachable: the loop always returns or throws.
   throw new EngineError("dns_or_network", "Redirect loop");
+}
+
+/**
+ * Stream the body and stop at the cap instead of buffering everything —
+ * a decompression bomb must not be able to exhaust memory.
+ */
+async function readBodyCapped(
+  res: Response,
+  maxBytes: number,
+): Promise<{ text: string; bytes: number }> {
+  if (!res.body) return { text: "", bytes: 0 };
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  let text = "";
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > maxBytes) {
+      text += decoder.decode(value.subarray(0, value.byteLength - (bytes - maxBytes)), {
+        stream: true,
+      });
+      await reader.cancel().catch(() => {});
+      return { text, bytes: maxBytes };
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  text += decoder.decode();
+  return { text, bytes };
 }
 
 function mapFetchError(err: unknown, url: string, timeoutMs: number): EngineError {
@@ -276,20 +334,27 @@ const CHALLENGE_MARKERS =
 /** Challenge interstitials are small; real pages aren't. */
 const CHALLENGE_MAX_WORDS = 300;
 export const DIVERGENCE_SIMILARITY_THRESHOLD = 0.4;
+/** Below this the control page is too small for divergence to mean much. */
+export const DIVERGENCE_MIN_CONTROL_WORDS = 50;
 
-function textSimilarity(a: string, b: string): number {
-  const ta = tokenize(a);
-  const tb = tokenize(b);
-  if (ta.length < 12 || tb.length < 12) {
-    const sa = new Set(ta);
-    const common = tb.filter((t) => sa.has(t)).length;
-    return tb.length === 0 ? 0 : common / tb.length;
+/**
+ * How much of the control (browser) text the crawler response contains.
+ * Direction matters: a crawler page that is a thin SUBSET of the real page
+ * must score low — the crawler is missing most of the content.
+ */
+function containmentOfControl(controlText: string, crawlerText: string): number {
+  const control = tokenize(controlText);
+  const crawler = tokenize(crawlerText);
+  if (control.length < 12 || crawler.length < 12) {
+    if (control.length === 0) return 1;
+    const inCrawler = new Set(crawler);
+    return control.filter((t) => inCrawler.has(t)).length / control.length;
   }
-  const sa = new Set(shingles(ta));
-  const sb = shingles(tb);
-  if (sb.length === 0) return 0;
-  const common = sb.filter((s) => sa.has(s)).length;
-  return common / sb.length;
+  const crawlerShingles = new Set(shingles(crawler));
+  const controlShingles = shingles(control);
+  if (controlShingles.length === 0) return 1;
+  const common = controlShingles.filter((s) => crawlerShingles.has(s)).length;
+  return common / controlShingles.length;
 }
 
 export function detectBotBlock(
@@ -340,15 +405,20 @@ export function detectBotBlock(
     );
   }
 
-  if (crawler.status >= 200 && crawler.status < 300 && controlWords > 0) {
-    const similarity = textSimilarity(controlText, crawlerText);
-    if (
-      similarity < DIVERGENCE_SIMILARITY_THRESHOLD &&
-      crawlerWords < controlWords * 0.5
-    ) {
+  // Divergence: most of what a browser receives is absent from the crawler
+  // response — covers both thin subset pages and equal-length cloaking. The
+  // minimum-control-words guard avoids noise on near-empty pages (README:
+  // documented deviation from the spec's bare ">60% different" wording).
+  if (
+    crawler.status >= 200 &&
+    crawler.status < 300 &&
+    controlWords >= DIVERGENCE_MIN_CONTROL_WORDS
+  ) {
+    const containment = containmentOfControl(controlText, crawlerText);
+    if (containment < DIVERGENCE_SIMILARITY_THRESHOLD) {
       return finish(
         "divergence",
-        `The crawler user agent received substantially different, thinner content (${crawlerWords} words, ${crawler.bytes} bytes; ${Math.round(similarity * 100)}% text overlap) than a desktop browser (${controlWords} words, ${control.bytes} bytes).`,
+        `The crawler user agent received substantially different content (${crawlerWords} words, ${crawler.bytes} bytes; only ${Math.round(containment * 100)}% of the browser-visible text present) than a desktop browser (${controlWords} words, ${control.bytes} bytes).`,
       );
     }
   }
