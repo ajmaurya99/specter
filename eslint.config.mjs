@@ -12,10 +12,16 @@ const eslintConfig = defineConfig([
     // error severity. The plugin itself is registered by eslint-config-next.
     files: ["**/*.tsx", "**/*.jsx"],
     rules: Object.fromEntries(
-      Object.entries(jsxA11y.flatConfigs.recommended.rules).map(([rule]) => [
-        rule,
-        "error",
-      ]),
+      Object.entries(jsxA11y.flatConfigs.recommended.rules)
+        .filter(([, value]) => {
+          const severity = Array.isArray(value) ? value[0] : value;
+          return severity !== "off" && severity !== 0;
+        })
+        // Bump severity to error but keep each rule's configured options.
+        .map(([rule, value]) => [
+          rule,
+          Array.isArray(value) ? ["error", ...value.slice(1)] : "error",
+        ]),
     ),
   },
   {
