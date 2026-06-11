@@ -9,7 +9,9 @@ import { VERDICT_LABEL, VERDICT_LONG } from "./labels";
  * bounding boxes; abstract skeleton shapes hint at the content type.
  */
 
-const MAX_MAP_PAGE_HEIGHT = 4200;
+// Matches the renderer's screenshot clip so the map and the Page view tab
+// always show the same set of regions.
+const MAX_MAP_PAGE_HEIGHT = 8000;
 
 const SURFACE: Record<RegionResult["status"], string> = {
   ok: "bg-visible-tint border-visible/60 hover:border-visible",

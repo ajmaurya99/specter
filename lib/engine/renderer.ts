@@ -54,11 +54,14 @@ export async function renderPage(
   let requestCount = 0;
 
   try {
-    // Identical blocking on every render keeps region geometry comparable
-    // between scans of the same URL. Stylesheets stay — layout matters.
+    // Identical treatment on every render keeps region geometry comparable
+    // between scans of the same URL. Images and fonts load (the Page view
+    // screenshot must look like the real page, and image-based regions need
+    // real dimensions); only heavy media streams are blocked. README flags
+    // this as a deviation from the spec's block-images line.
     await context.route("**/*", async (route) => {
       const type = route.request().resourceType();
-      if (type === "image" || type === "font" || type === "media") {
+      if (type === "media") {
         return route.abort();
       }
       if (deps.isHostAllowed) {
@@ -95,6 +98,28 @@ export async function renderPage(
       .waitForLoadState("networkidle", { timeout: idleBudget })
       .catch(() => {});
 
+    // Settle the page before ANY measurement: freeze animations, walk the
+    // full scroll height so reveal-on-scroll observers and lazy loaders fire,
+    // then return to the top. Without this, geometry is measured against one
+    // layout while the screenshot pass (which scrolls) mutates the page into
+    // another — the overlay then highlights the wrong sections.
+    try {
+      await page.addStyleTag({
+        content:
+          "*, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }",
+      });
+      if (renderDeadline - Date.now() > 4_000) {
+        await page.evaluate(SCROLL_SETTLE_SCRIPT);
+        await page
+          .waitForLoadState("networkidle", {
+            timeout: Math.max(1_000, Math.min(5_000, renderDeadline - Date.now())),
+          })
+          .catch(() => {});
+      }
+    } catch {
+      // settling is best-effort — analyze whatever state we have
+    }
+
     let seg: SegmentationResult;
     try {
       seg = (await page.evaluate(SEGMENT_PAGE_SCRIPT)) as SegmentationResult;
@@ -102,19 +127,28 @@ export async function renderPage(
       throw mapRenderError(err, input.url, "segment");
     }
 
-    // Screenshot the SAME render the bounding boxes came from, so the overlay
-    // aligns perfectly (images are blocked, so image areas are blank — this is
-    // the tradeoff for geometry that matches the captured regions). Tall pages
-    // are clipped so the JPEG stays bounded.
+    // Screenshot the SAME settled render the bounding boxes came from, so
+    // the overlay aligns. fullPage is REQUIRED: without it, clip silently
+    // captures only the viewport while we'd advertise the full height — the
+    // overlay then stretches over wrong pixels. Tall pages are clipped so
+    // the JPEG stays bounded.
     const shotHeight = Math.min(Math.max(seg.pageHeight, VIEWPORT.height), SCREENSHOT_MAX_HEIGHT);
     let screenshot: RenderResult["screenshot"] = null;
     try {
       const bytes = await page.screenshot({
         type: "jpeg",
-        quality: 55,
+        quality: 70,
+        fullPage: true,
         clip: { x: 0, y: 0, width: VIEWPORT.width, height: shotHeight },
       });
-      screenshot = { bytes, width: VIEWPORT.width, height: shotHeight };
+      // Advertise the dimensions actually encoded in the JPEG — if they ever
+      // disagree with the request, the overlay math must follow the pixels.
+      const actual = jpegDimensions(bytes);
+      screenshot = {
+        bytes,
+        width: actual?.width ?? VIEWPORT.width,
+        height: actual?.height ?? shotHeight,
+      };
     } catch {
       // A screenshot failure must never fail the scan — the tab just won't show.
     }
@@ -150,6 +184,30 @@ function toRegionCapture(raw: RawRegion): RegionCapture {
   };
 }
 
+/** Width/height from a JPEG's start-of-frame marker (null if not found). */
+export function jpegDimensions(
+  bytes: Buffer,
+): { width: number; height: number } | null {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < bytes.length && bytes[i] === 0xff) {
+    const marker = bytes[i + 1];
+    if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd9)) {
+      i += 2;
+      continue;
+    }
+    const length = (bytes[i + 2] << 8) + bytes[i + 3];
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return {
+        height: (bytes[i + 5] << 8) + bytes[i + 6],
+        width: (bytes[i + 7] << 8) + bytes[i + 8],
+      };
+    }
+    i += 2 + length;
+  }
+  return null;
+}
+
 function mapRenderError(err: unknown, url: string, stage: string): EngineError {
   if (err instanceof EngineError) return err;
   const message = (err as Error)?.message ?? String(err);
@@ -172,6 +230,22 @@ function mapRenderError(err: unknown, url: string, stage: string): EngineError {
     { url, stage, message: message.slice(0, 300) },
   );
 }
+
+/**
+ * Walks the scroll height in viewport-sized steps so IntersectionObserver
+ * lazy-loaders and reveal-on-scroll effects fire everywhere, then returns to
+ * the top. Bounded (~3s worst case) so it can't eat the render budget.
+ */
+const SCROLL_SETTLE_SCRIPT = `(async () => {
+  const step = Math.max(600, window.innerHeight);
+  const limit = Math.min(document.documentElement.scrollHeight, 20000);
+  for (let y = step; y <= limit; y += step) {
+    window.scrollTo(0, y);
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  window.scrollTo(0, 0);
+  await new Promise((r) => setTimeout(r, 350));
+})()`;
 
 /**
  * Runs inside the rendered page. Walks top-level semantic/structural blocks
@@ -330,9 +404,9 @@ const SEGMENT_PAGE_SCRIPT = `(() => {
     let imgCount = 0;
     let imgWithoutAlt = 0;
     for (const img of Array.from(el.querySelectorAll("img"))) {
-      // Image requests are blocked during render, which can collapse layout
-      // rects to zero — fall back to the intended width/height attributes so
-      // imageDominant still reflects the real page.
+      // Broken or still-loading images can collapse to a zero rect — fall
+      // back to the intended width/height attributes so imageDominant still
+      // reflects the real page.
       const r = img.getBoundingClientRect();
       const w = r.width || img.width || Number(img.getAttribute("width")) || 0;
       const h = r.height || img.height || Number(img.getAttribute("height")) || 0;

@@ -34,9 +34,11 @@ runs in the one Next.js process; there are no external services.
    agent (`GPTBot/1.0` by default) and once with a desktop-browser user agent.
    Comparing the two detects bot blocking at the CDN/WAF layer. robots.txt and
    llms.txt are checked too.
-2. **Rendered view** — headless Chromium renders the page (images/fonts/media
-   blocked, 25 s budget) and segments it into regions from the semantic
-   structure with real bounding boxes.
+2. **Rendered view** — headless Chromium renders the page (25 s budget,
+   media streams blocked), freezes animations and walks the scroll height so
+   lazy-loaded content settles, then segments the page into regions from the
+   semantic structure with real bounding boxes and captures the screenshot
+   for the Page view — all from that one settled state.
 3. **Diff** — each region's visible text is searched for in the raw HTML using
    shingled 6-word sequences (distinctive tokens for short regions), plus a
    separate check against inline `<script>` payloads.
@@ -68,9 +70,7 @@ The results view has three tabs, all sharing the same region selection:
   by its verdict, overlaid in place. This makes "looks fine to me, invisible
   to AI" immediately obvious — a client-rendered app shows its full UI under a
   solid red overlay. The screenshot and the region boxes come from the same
-  render, so the overlay aligns exactly. (Images are blocked during the scan
-  render to keep it fast and geometry-stable, so picture areas in the
-  screenshot appear blank.)
+  settled render, so the overlay aligns with what's pictured.
 - **Crawler view** — the exact stripped raw-HTML text the differ used: the
   ground-truth proof behind every verdict.
 
@@ -179,6 +179,10 @@ is paired with a text label.
   link isn't "navigation"); the spec's >50 % rule has no minimum.
 - When a page never reaches network-idle within the render budget, Specter
   analyzes the partial render instead of failing the scan with a timeout.
+- The spec calls for blocking image/font requests during render; Specter
+  blocks only media streams. Images and fonts load so the Page view
+  screenshot matches the real page and image-based regions measure their true
+  size — renders are somewhat slower in exchange.
 
 ## Known limitations
 

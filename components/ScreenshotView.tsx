@@ -6,9 +6,9 @@ import { VERDICT_LABEL, VERDICT_LONG } from "./labels";
 /**
  * The rendered page screenshot with the verdict colors overlaid in place, so
  * it's obvious which parts of the real page are invisible to AI crawlers.
- * The screenshot and the region boxes come from the same render, so the
- * overlay aligns exactly. (Images are blocked during the render, so image
- * areas in the screenshot are blank — see the note below.)
+ * The renderer settles the page (animations frozen, lazy-loaders triggered)
+ * and then measures geometry and captures the screenshot from that same
+ * state, so the overlay aligns with what's pictured.
  */
 
 const OVERLAY: Record<RegionResult["status"], string> = {
@@ -52,8 +52,9 @@ export function ScreenshotView({
     <div className="overflow-hidden rounded-card border border-hairline bg-surface shadow-soft">
       <div className="border-b border-hairline bg-bg px-4 py-2">
         <p className="text-xs text-muted">
-          The rendered page with each region tinted by its verdict. Images are
-          omitted from the scan render, so picture areas appear blank.
+          The page as the scan&apos;s browser rendered it, with each region
+          tinted by its verdict. Tinted color shows what humans see; red areas
+          are what AI crawlers miss.
         </p>
       </div>
       <div className="max-h-[34rem] overflow-y-auto bg-bg p-3">
