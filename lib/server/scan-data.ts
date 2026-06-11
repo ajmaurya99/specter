@@ -36,6 +36,11 @@ const scanResultSchema = z.looseObject({
   rawText: z.string(),
   pageHeight: z.number(),
   viewportWidth: z.number(),
+  // Older scans predate screenshots; default to none so they still parse.
+  screenshot: z
+    .object({ width: z.number(), height: z.number() })
+    .nullish()
+    .transform((v) => v ?? null),
 });
 
 const comparisonSchema = z.looseObject({

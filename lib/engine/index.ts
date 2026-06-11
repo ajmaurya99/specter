@@ -51,6 +51,12 @@ export interface ScanDeps {
   onProgress?: (phase: ScanPhase, telemetry: Record<string, unknown>) => void;
   enhancer?: PromptEnhancer;
   now?: () => Date;
+  /**
+   * Persists the page screenshot bytes (the engine stays pure — the server
+   * writes them to disk). Resolves to true on success; the screenshot is only
+   * advertised in the result when this returns true.
+   */
+  saveScreenshot?: (bytes: Buffer) => Promise<boolean> | boolean;
 }
 
 export async function runScan(input: ScanInput, deps: ScanDeps): Promise<ScanResult> {
@@ -137,6 +143,23 @@ export async function runScan(input: ScanInput, deps: ScanDeps): Promise<ScanRes
       }),
   );
 
+  // Persist the screenshot bytes via the injected sink; only advertise the
+  // screenshot in the result if the save succeeded.
+  let screenshot: ScanResult["screenshot"] = null;
+  if (render.screenshot && deps.saveScreenshot) {
+    try {
+      const saved = await deps.saveScreenshot(render.screenshot.bytes);
+      if (saved) {
+        screenshot = {
+          width: render.screenshot.width,
+          height: render.screenshot.height,
+        };
+      }
+    } catch {
+      // never fail a scan over a screenshot
+    }
+  }
+
   const scannedAt = (deps.now?.() ?? new Date()).toISOString();
 
   return {
@@ -161,6 +184,7 @@ export async function runScan(input: ScanInput, deps: ScanDeps): Promise<ScanRes
     pageHeight: render.pageHeight,
     viewportWidth: 1280,
     crawlerUserAgent: input.crawlerUserAgent,
+    screenshot,
   };
 }
 

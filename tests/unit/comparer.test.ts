@@ -34,6 +34,7 @@ function scan(score: number, regions: RegionResult[]): ScanResult {
     pageHeight: 2000,
     viewportWidth: 1280,
     crawlerUserAgent: "GPTBot/1.0",
+    screenshot: null,
   };
 }
 

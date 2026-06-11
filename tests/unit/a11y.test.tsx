@@ -123,6 +123,7 @@ function fixtureResult(): ScanResult {
     pageHeight: 2400,
     viewportWidth: 1280,
     crawlerUserAgent: "GPTBot/1.0",
+    screenshot: null,
   };
 }
 

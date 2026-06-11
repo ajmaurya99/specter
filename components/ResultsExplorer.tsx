@@ -12,8 +12,9 @@ import { Inspector } from "./Inspector";
 import { ageMinutesSince, hostOf, timeAgo } from "./labels";
 import { PageChecksPanel } from "./PageChecksPanel";
 import { RegionMap } from "./RegionMap";
+import { ScreenshotView } from "./ScreenshotView";
 
-type Tab = "map" | "crawler";
+type Tab = "map" | "screenshot" | "crawler";
 
 export function ResultsExplorer({
   scanId,
@@ -99,10 +100,11 @@ export function ResultsExplorer({
           }`}
         >
           <section aria-label="Page map" className="min-w-0">
-            <div role="tablist" aria-label="Page view" className="mb-2 flex gap-1">
+            <div role="tablist" aria-label="Page view" className="mb-2 flex flex-wrap gap-1">
               {(
                 [
                   ["map", "Region map"],
+                  ...(result.screenshot ? [["screenshot", "Page view"] as const] : []),
                   ["crawler", "Crawler view"],
                 ] as const
               ).map(([key, label]) => (
@@ -133,6 +135,22 @@ export function ResultsExplorer({
                 onSelect={select}
               />
             </div>
+            {result.screenshot && (
+              <div
+                id="panel-screenshot"
+                role="tabpanel"
+                aria-labelledby="tab-screenshot"
+                hidden={tab !== "screenshot"}
+              >
+                <ScreenshotView
+                  scanId={scanId}
+                  regions={result.regions}
+                  screenshot={result.screenshot}
+                  selected={selected}
+                  onSelect={select}
+                />
+              </div>
+            )}
             <div
               id="panel-crawler"
               role="tabpanel"

@@ -38,6 +38,9 @@ yarn-error.log*
 *.db
 *.db-journal
 
+# page screenshots (regenerated per scan)
+/.specter-screenshots/
+
 # prisma generated client
 /lib/generated/
 

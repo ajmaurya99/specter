@@ -58,6 +58,22 @@ runs in the one Next.js process; there are no external services.
 | `hidden_but_present` | green (note) | Text is in the raw HTML but CSS-hidden in the render. Crawlers read it; make sure that's intentional. |
 | `crawler_blocked` | **page-level** | The crawler UA gets 401/403/429, a challenge page, or substantially different content while a browser UA gets the real page. This verdict leads the report ("AI crawlers are blocked at the door — fix this first"), caps the score at 10, and ships a CDN/WAF allowlisting prompt. Regions are still analyzed from the browser view. |
 
+## Three ways to read a result
+
+The results view has three tabs, all sharing the same region selection:
+
+- **Region map** — a stylized reconstruction in a faux browser frame, each
+  region a clickable tinted block with abstract content-type skeletons.
+- **Page view** — the actual rendered-page screenshot with each region tinted
+  by its verdict, overlaid in place. This makes "looks fine to me, invisible
+  to AI" immediately obvious — a client-rendered app shows its full UI under a
+  solid red overlay. The screenshot and the region boxes come from the same
+  render, so the overlay aligns exactly. (Images are blocked during the scan
+  render to keep it fast and geometry-stable, so picture areas in the
+  screenshot appear blank.)
+- **Crawler view** — the exact stripped raw-HTML text the differ used: the
+  ground-truth proof behind every verdict.
+
 ## Rescan & compare
 
 Scans are stored per normalized URL (lowercase host, default port/fragment/

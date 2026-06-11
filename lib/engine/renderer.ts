@@ -12,6 +12,8 @@ import type { RegionCapture, RenderResult } from "./types";
 export const VIEWPORT = { width: 1280, height: 2000 } as const;
 export const RENDER_HARD_CAP_MS = 25_000;
 const GOTO_TIMEOUT_MS = 15_000;
+/** Clip the screenshot here so very tall pages don't produce huge JPEGs. */
+const SCREENSHOT_MAX_HEIGHT = 8_000;
 
 export interface RendererInput {
   url: string;
@@ -100,12 +102,30 @@ export async function renderPage(
       throw mapRenderError(err, input.url, "segment");
     }
 
+    // Screenshot the SAME render the bounding boxes came from, so the overlay
+    // aligns perfectly (images are blocked, so image areas are blank — this is
+    // the tradeoff for geometry that matches the captured regions). Tall pages
+    // are clipped so the JPEG stays bounded.
+    const shotHeight = Math.min(Math.max(seg.pageHeight, VIEWPORT.height), SCREENSHOT_MAX_HEIGHT);
+    let screenshot: RenderResult["screenshot"] = null;
+    try {
+      const bytes = await page.screenshot({
+        type: "jpeg",
+        quality: 55,
+        clip: { x: 0, y: 0, width: VIEWPORT.width, height: shotHeight },
+      });
+      screenshot = { bytes, width: VIEWPORT.width, height: shotHeight };
+    } catch {
+      // A screenshot failure must never fail the scan — the tab just won't show.
+    }
+
     return {
       regions: seg.regions.map(toRegionCapture),
       hiddenBlocks: seg.hiddenBlocks,
       pageHeight: seg.pageHeight,
       requestCount,
       title: seg.title,
+      screenshot,
     };
   } finally {
     await context.close().catch(() => {});

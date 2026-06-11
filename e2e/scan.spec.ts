@@ -61,6 +61,15 @@ test("scan → results → rescan improved → comparison, with axe pass", async
   await expect(page.getByRole("button", { name: "Copy" })).toBeVisible();
   await page.getByRole("button", { name: "← All regions" }).click();
 
+  // --- page view tab overlays verdicts on the actual screenshot
+  await page.getByRole("tab", { name: "Page view" }).click();
+  const shot = page.getByRole("img", { name: "Screenshot of the rendered page" });
+  await expect(shot).toBeVisible();
+  // The image must actually load (the route served real bytes).
+  await expect
+    .poll(() => shot.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBeGreaterThan(0);
+
   // --- crawler view tab shows exactly what the differ saw
   await page.getByRole("tab", { name: "Crawler view" }).click();
   const crawlerPanel = page.getByRole("region", { name: "Crawler view: raw HTML text" });
@@ -101,11 +110,11 @@ test("typed error states render dedicated screens with the URL preserved", async
 }) => {
   test.setTimeout(120_000);
 
-  // PDF
+  // PDF — scope to the heading (Next's route announcer mirrors the text).
   await submitScan(page, `${fixture.baseUrl}/pdf`);
-  await expect(page.getByText("This isn't an HTML page.")).toBeVisible({
-    timeout: 60_000,
-  });
+  await expect(
+    page.getByRole("heading", { name: "This isn't an HTML page." }),
+  ).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole("link", { name: "Retry this URL" })).toHaveAttribute(
     "href",
     expect.stringContaining(encodeURIComponent(`${fixture.baseUrl}/pdf`)),
@@ -113,9 +122,9 @@ test("typed error states render dedicated screens with the URL preserved", async
 
   // login-gated
   await submitScan(page, `${fixture.baseUrl}/login-redirect`);
-  await expect(page.getByText("This page is behind a login.")).toBeVisible({
-    timeout: 60_000,
-  });
+  await expect(
+    page.getByRole("heading", { name: "This page is behind a login." }),
+  ).toBeVisible({ timeout: 60_000 });
 
   // retry link prefills the input
   await page.getByRole("link", { name: "Retry this URL" }).click();
@@ -130,7 +139,9 @@ test("crawler-blocked page leads with the blocked panel and CDN/WAF prompt", asy
   test.setTimeout(120_000);
   await submitScan(page, `${fixture.baseUrl}/blocked`);
   await expect(
-    page.getByText("AI crawlers are blocked at the door — fix this first."),
+    page.getByRole("heading", {
+      name: "AI crawlers are blocked at the door — fix this first.",
+    }),
   ).toBeVisible({ timeout: 90_000 });
   await expect(
     page.getByText("Crawler user agent received", { exact: true }),

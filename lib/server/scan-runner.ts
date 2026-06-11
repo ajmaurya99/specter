@@ -8,6 +8,7 @@ import { env } from "./env";
 import { prisma } from "./prisma";
 import { publishScanEvent, type ScanStatus } from "./registry";
 import { parseScanResult } from "./scan-data";
+import { saveScreenshot } from "./screenshots";
 
 /**
  * Bridges the pure engine to persistence and live progress: every phase is
@@ -28,7 +29,7 @@ export async function runStoredScan(scanId: string): Promise<void> {
   };
 
   try {
-    const result = await runWithRetry(scan.normalizedUrl, scan.inputUrl, setStatus);
+    const result = await runWithRetry(scanId, scan.normalizedUrl, scan.inputUrl, setStatus);
 
     const truncated: ScanResult = {
       ...result,
@@ -81,6 +82,7 @@ export async function runStoredScan(scanId: string): Promise<void> {
 }
 
 async function runWithRetry(
+  scanId: string,
   url: string,
   originalUrl: string,
   setStatus: (s: ScanStatus, telemetry?: Record<string, unknown>) => Promise<void>,
@@ -94,6 +96,7 @@ async function runWithRetry(
   };
   const deps = {
     enhancer: createEnhancer(env.ANTHROPIC_API_KEY),
+    saveScreenshot: (bytes: Buffer) => saveScreenshot(scanId, bytes),
     onProgress: (phase: ScanStatus, telemetry: Record<string, unknown>) => {
       // Fire-and-forget by design, but a failed write must not become an
       // unhandled rejection.

@@ -66,12 +66,22 @@ export interface HiddenBlock {
   text: string;
 }
 
+export interface Screenshot {
+  /** JPEG bytes of the rendered page (images blocked — see the README note). */
+  bytes: Buffer;
+  /** Pixel dimensions of the capture; the overlay scales region boxes to these. */
+  width: number;
+  height: number;
+}
+
 export interface RenderResult {
   regions: RegionCapture[];
   hiddenBlocks: HiddenBlock[];
   pageHeight: number;
   requestCount: number;
   title: string;
+  /** Full-page screenshot from the same render the bounding boxes came from. */
+  screenshot: Screenshot | null;
 }
 
 export interface DiffResult {
@@ -170,6 +180,11 @@ export interface ScanResult {
   pageHeight: number;
   viewportWidth: number;
   crawlerUserAgent: string;
+  /**
+   * Dimensions of the saved page screenshot (bytes live on disk, served by
+   * /api/scan/[id]/screenshot). null when no screenshot was captured.
+   */
+  screenshot: { width: number; height: number } | null;
 }
 
 export type RegionChangeKind =
